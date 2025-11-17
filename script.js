@@ -46,6 +46,8 @@ let roomId = null;
 let onlinePlayers = new Map();
 let isOnlineGame = false;
 let isMyTurn = false;
+let reconnectAttempts = 0;
+const MAX_RECONNECT_ATTEMPTS = 3;
 
 // DOM elements
 const gameBoard = document.getElementById('gameBoard');
@@ -88,6 +90,14 @@ function initGame() {
     setupEventListeners();
     checkThemePreference();
     showMainMenu();
+    
+    // Load saved names
+    const savedName1 = localStorage.getItem('snakesLaddersPlayer1');
+    const savedName2 = localStorage.getItem('snakesLaddersPlayer2');
+    if (savedName1) playerNames[0] = savedName1;
+    if (savedName2) playerNames[1] = savedName2;
+    
+    updatePlayerDisplayNames();
 }
 
 // Show main menu
@@ -95,6 +105,19 @@ function showMainMenu() {
     onlineModal.classList.add('hidden');
     playerNamesModal.classList.add('hidden');
     resetGameUI();
+    
+    // Close any existing connections
+    if (conn) {
+        conn.close();
+        conn = null;
+    }
+    if (peer) {
+        peer.destroy();
+        peer = null;
+    }
+    
+    isOnlineGame = false;
+    onlinePlayers.clear();
 }
 
 // Show online modal
@@ -103,52 +126,107 @@ function showOnlineModal() {
     initializeOnlineMultiplayer();
 }
 
-// Initialize online multiplayer
+// Initialize online multiplayer with better error handling
 function initializeOnlineMultiplayer() {
     connectionStatus.textContent = "Connecting to server...";
     connectionStatus.className = "connection-status";
     
-    // Initialize PeerJS
-    peer = new Peer({
-        debug: 3,
-        config: {
-            iceServers: [
-                { urls: 'stun:stun.l.google.com:19302' },
-                { urls: 'stun:stun1.l.google.com:19302' }
-            ]
-        }
-    });
+    createRoomBtn.disabled = true;
+    joinRoomBtn.disabled = true;
+    
+    try {
+        // Initialize PeerJS with better configuration
+        peer = new Peer({
+            debug: 2,
+            config: {
+                iceServers: [
+                    { urls: 'stun:stun.l.google.com:19302' },
+                    { urls: 'stun:stun1.l.google.com:19302' },
+                    { urls: 'stun:stun2.l.google.com:19302' },
+                    { urls: 'stun:stun3.l.google.com:19302' },
+                    { urls: 'stun:stun4.l.google.com:19302' }
+                ]
+            }
+        });
 
-    peer.on('open', (id) => {
-        myPlayerId = id;
-        connectionStatus.textContent = "Connected to server!";
-        connectionStatus.classList.add("connected");
-        console.log("My peer ID is: " + id);
-    });
+        peer.on('open', (id) => {
+            myPlayerId = id;
+            connectionStatus.textContent = "Connected to server! Your ID: " + id.substring(0, 8) + "...";
+            connectionStatus.classList.add("connected");
+            console.log("My peer ID is: " + id);
+            
+            createRoomBtn.disabled = false;
+            joinRoomBtn.disabled = false;
+            reconnectAttempts = 0;
+        });
 
-    peer.on('connection', (connection) => {
-        conn = connection;
-        setupConnection(connection);
-    });
+        peer.on('connection', (connection) => {
+            if (conn) {
+                console.log("Already have a connection, rejecting new one");
+                connection.close();
+                return;
+            }
+            conn = connection;
+            setupConnection(connection);
+        });
 
-    peer.on('error', (err) => {
-        console.error('PeerJS error:', err);
-        connectionStatus.textContent = "Connection failed. Please refresh.";
+        peer.on('error', (err) => {
+            console.error('PeerJS error:', err);
+            
+            if (err.type === 'unavailable-id') {
+                connectionStatus.textContent = "ID unavailable. Please try again.";
+            } else if (err.type === 'network') {
+                connectionStatus.textContent = "Network error. Check your connection.";
+            } else if (err.type === 'peer-unavailable') {
+                connectionStatus.textContent = "Peer unavailable. Check the Room ID.";
+            } else {
+                connectionStatus.textContent = "Connection error: " + err.message;
+            }
+            
+            connectionStatus.classList.add("disconnected");
+            createRoomBtn.disabled = true;
+            joinRoomBtn.disabled = true;
+            
+            // Try to reconnect
+            if (reconnectAttempts < MAX_RECONNECT_ATTEMPTS) {
+                reconnectAttempts++;
+                setTimeout(() => {
+                    connectionStatus.textContent = `Reconnecting... (${reconnectAttempts}/${MAX_RECONNECT_ATTEMPTS})`;
+                    initializeOnlineMultiplayer();
+                }, 2000);
+            }
+        });
+
+        peer.on('disconnected', () => {
+            console.log("Disconnected from signaling server");
+            connectionStatus.textContent = "Disconnected. Trying to reconnect...";
+            connectionStatus.classList.add("disconnected");
+            
+            // Try to reconnect to signaling server
+            setTimeout(() => {
+                peer.reconnect();
+            }, 5000);
+        });
+
+        peer.on('close', () => {
+            console.log("Peer connection closed");
+            connectionStatus.textContent = "Connection closed";
+            connectionStatus.classList.add("disconnected");
+        });
+
+    } catch (error) {
+        console.error("Failed to initialize PeerJS:", error);
+        connectionStatus.textContent = "Failed to initialize connection";
         connectionStatus.classList.add("disconnected");
-    });
-
-    peer.on('disconnected', () => {
-        connectionStatus.textContent = "Disconnected from server";
-        connectionStatus.classList.add("disconnected");
-    });
+    }
 }
 
-// Setup connection
+// Setup connection with better error handling
 function setupConnection(connection) {
     conn = connection;
     
     conn.on('open', () => {
-        console.log("Connected to: " + conn.peer);
+        console.log("Connected to peer: " + conn.peer);
         addOnlinePlayer(conn.peer, "Opponent");
         updateOnlineUI();
         
@@ -156,7 +234,8 @@ function setupConnection(connection) {
         sendData({
             type: 'playerInfo',
             playerId: myPlayerId,
-            playerName: playerNames[0]
+            playerName: playerNames[0],
+            isHost: isOnlineHost
         });
     });
 
@@ -165,13 +244,19 @@ function setupConnection(connection) {
     });
 
     conn.on('close', () => {
-        console.log("Connection closed");
+        console.log("Connection closed with peer: " + conn.peer);
         removeOnlinePlayer(conn.peer);
         updateOnlineUI();
+        
+        if (isOnlineGame) {
+            onlineStatus.textContent = "Opponent disconnected";
+            rollDiceBtn.disabled = true;
+        }
     });
 
     conn.on('error', (err) => {
         console.error("Connection error:", err);
+        onlineStatus.textContent = "Connection error with opponent";
     });
 }
 
@@ -182,7 +267,15 @@ function handleOnlineData(data) {
     switch (data.type) {
         case 'playerInfo':
             addOnlinePlayer(data.playerId, data.playerName);
+            playerNames[1] = data.playerName;
             updateOnlineUI();
+            
+            // If I'm the host and this is the first connection, start game automatically
+            if (isOnlineHost && onlinePlayers.size === 1) {
+                setTimeout(() => {
+                    startOnlineGame();
+                }, 1000);
+            }
             break;
             
         case 'gameStart':
@@ -197,16 +290,34 @@ function handleOnlineData(data) {
             handleOpponentMove(data);
             break;
             
+        case 'gameState':
+            handleGameState(data);
+            break;
+            
         case 'chatMessage':
             showChatMessage(data);
+            break;
+            
+        case 'ping':
+            // Respond to ping
+            sendData({ type: 'pong' });
             break;
     }
 }
 
-// Send data to opponent
+// Send data to opponent with error handling
 function sendData(data) {
     if (conn && conn.open) {
-        conn.send(data);
+        try {
+            conn.send(data);
+            return true;
+        } catch (error) {
+            console.error("Failed to send data:", error);
+            return false;
+        }
+    } else {
+        console.warn("No active connection to send data");
+        return false;
     }
 }
 
@@ -214,7 +325,8 @@ function sendData(data) {
 function addOnlinePlayer(playerId, playerName) {
     onlinePlayers.set(playerId, {
         name: playerName,
-        connected: true
+        connected: true,
+        joinedAt: new Date()
     });
     connectionIndicator.classList.add('connected');
     onlineStatus.textContent = "Connected to opponent";
@@ -223,8 +335,10 @@ function addOnlinePlayer(playerId, playerName) {
 // Remove online player
 function removeOnlinePlayer(playerId) {
     onlinePlayers.delete(playerId);
-    connectionIndicator.classList.remove('connected');
-    onlineStatus.textContent = "Opponent disconnected";
+    if (onlinePlayers.size === 0) {
+        connectionIndicator.classList.remove('connected');
+        onlineStatus.textContent = "Waiting for opponent...";
+    }
 }
 
 // Update online UI
@@ -234,13 +348,13 @@ function updateOnlineUI() {
     
     // Update players list
     playersList.innerHTML = '';
-    playersList.innerHTML += `<div class="player-item">You (${playerNames[0]})</div>`;
+    playersList.innerHTML += `<div class="player-item">You (${playerNames[0]}) ${isOnlineHost ? '(Host)' : ''}</div>`;
     onlinePlayers.forEach((player, id) => {
-        playersList.innerHTML += `<div class="player-item">${player.name}</div>`;
+        playersList.innerHTML += `<div class="player-item">${player.name} (Connected)</div>`;
     });
     
-    // Show start button if host and 2 players
-    if (isOnlineHost && playerCountValue === 2) {
+    // Show start button if host and at least 1 other player
+    if (isOnlineHost && playerCountValue >= 2) {
         startOnlineGameBtn.classList.remove('hidden');
     } else {
         startOnlineGameBtn.classList.add('hidden');
@@ -249,11 +363,18 @@ function updateOnlineUI() {
 
 // Create room
 function createRoom() {
+    if (!peer || !peer.id) {
+        alert("Not connected to server yet. Please wait.");
+        return;
+    }
+    
     roomId = generateRoomId();
     isOnlineHost = true;
     currentRoomId.textContent = roomId;
     roomInfo.classList.remove('hidden');
     updateOnlineUI();
+    
+    connectionStatus.textContent = `Room created! ID: ${roomId}. Share this with your friend.`;
 }
 
 // Join room
@@ -264,15 +385,42 @@ function joinRoom() {
         return;
     }
     
+    if (!peer || !peer.id) {
+        alert("Not connected to server yet. Please wait.");
+        return;
+    }
+    
     roomId = joinId;
     isOnlineHost = false;
     
-    // Connect to the host
-    conn = peer.connect(joinId);
-    setupConnection(conn);
+    // Close existing connection if any
+    if (conn) {
+        conn.close();
+        conn = null;
+    }
     
-    currentRoomId.textContent = roomId;
-    roomInfo.classList.remove('hidden');
+    connectionStatus.textContent = `Connecting to room ${joinId}...`;
+    
+    try {
+        conn = peer.connect(joinId, {
+            reliable: true,
+            serialization: 'json'
+        });
+        
+        if (!conn) {
+            throw new Error("Failed to create connection");
+        }
+        
+        setupConnection(conn);
+        
+        currentRoomId.textContent = roomId;
+        roomInfo.classList.remove('hidden');
+        
+    } catch (error) {
+        console.error("Failed to connect to room:", error);
+        connectionStatus.textContent = "Failed to connect to room. Check the ID and try again.";
+        connectionStatus.classList.add("disconnected");
+    }
 }
 
 // Generate room ID
@@ -284,14 +432,15 @@ function generateRoomId() {
 function startOnlineGame(data = null) {
     if (data) {
         // We are the client receiving game start
-        playerNames[1] = data.opponentName;
-        isMyTurn = false;
+        playerNames[1] = data.opponentName || "Opponent";
+        isMyTurn = data.isMyTurn !== undefined ? data.isMyTurn : false;
     } else {
         // We are the host starting the game
         const opponent = Array.from(onlinePlayers.values())[0];
         sendData({
             type: 'gameStart',
-            opponentName: playerNames[0]
+            opponentName: playerNames[0],
+            isMyTurn: false
         });
         isMyTurn = true;
     }
@@ -300,6 +449,16 @@ function startOnlineGame(data = null) {
     onlineModal.classList.add('hidden');
     startGameWithNames();
     updateOnlineGameUI();
+    
+    // Send initial game state if host
+    if (isOnlineHost) {
+        sendData({
+            type: 'gameState',
+            playerPositions: playerPositions,
+            currentPlayer: currentPlayer,
+            gameOver: gameOver
+        });
+    }
 }
 
 // Start game with names
@@ -311,10 +470,10 @@ function startGameWithNames() {
     
     if (isOnlineGame) {
         if (isMyTurn) {
-            onlineStatus.textContent = "Your turn!";
+            onlineStatus.textContent = "Your turn! Roll the dice.";
             rollDiceBtn.disabled = false;
         } else {
-            onlineStatus.textContent = "Opponent's turn...";
+            onlineStatus.textContent = "Opponent's turn... Waiting...";
             rollDiceBtn.disabled = true;
         }
     }
@@ -326,17 +485,19 @@ function updateOnlineGameUI() {
         player1Display.textContent = playerNames[0];
         onlinePlayerDisplay.textContent = playerNames[1];
         onlinePlayerElement.classList.remove('hidden');
-        player2Display.parentElement.classList.add('hidden');
+        document.getElementById('player2').classList.add('hidden');
         aiPlayerElement.classList.add('hidden');
     }
 }
 
 // Handle opponent dice roll
 function handleOpponentDiceRoll(data) {
-    diceResult.textContent = `Dice: ${data.value}`;
+    diceResult.textContent = `Opponent rolled: ${data.value}`;
+    showMessage(`Opponent rolled: ${data.value}`);
+    
     setTimeout(() => {
         movePlayer(data.value, true);
-    }, 1000);
+    }, 1500);
 }
 
 // Handle opponent move
@@ -344,15 +505,35 @@ function handleOpponentMove(data) {
     playerPositions[1] = data.position;
     updatePlayerPositions();
     
+    if (data.landedOnSnake) {
+        showMessage(`Opponent landed on a snake!`);
+    } else if (data.climbedLadder) {
+        showMessage(`Opponent climbed a ladder!`);
+    }
+    
     if (!data.gameOver) {
         isMyTurn = true;
-        onlineStatus.textContent = "Your turn!";
+        onlineStatus.textContent = "Your turn! Roll the dice.";
         rollDiceBtn.disabled = false;
         currentPlayer = 0;
         updatePlayerDisplay();
     } else {
         gameOver = true;
         declareWinnerOnline(data.winner);
+    }
+}
+
+// Handle game state sync
+function handleGameState(data) {
+    playerPositions = data.playerPositions || [0, 0];
+    currentPlayer = data.currentPlayer || 0;
+    gameOver = data.gameOver || false;
+    
+    updatePlayerPositions();
+    updatePlayerDisplay();
+    
+    if (gameOver) {
+        declareWinnerOnline("Opponent");
     }
 }
 
@@ -364,7 +545,17 @@ function showChatMessage(data) {
 
 // Copy room ID
 function copyRoomIdToClipboard() {
+    if (!roomId) {
+        alert("No room ID to copy");
+        return;
+    }
+    
     navigator.clipboard.writeText(roomId).then(() => {
+        alert("Room ID copied to clipboard! Share it with your friend.");
+    }).catch(err => {
+        // Fallback for older browsers
+        roomIdInput.select();
+        document.execCommand('copy');
         alert("Room ID copied to clipboard!");
     });
 }
@@ -373,30 +564,48 @@ function copyRoomIdToClipboard() {
 function createBoard() {
     gameBoard.innerHTML = '';
     
-    for (let i = BOARD_SIZE; i > 0; i--) {
-        const cell = document.createElement('div');
-        cell.className = 'cell';
-        cell.id = `cell-${i}`;
+    // Create board in zigzag pattern (snakes and ladders style)
+    for (let row = 9; row >= 0; row--) {
+        const isReverse = row % 2 === 1; // Even rows go left to right, odd rows go right to left
         
-        // Add cell number
-        const cellNumber = document.createElement('div');
-        cellNumber.className = 'cell-number';
-        cellNumber.textContent = i;
-        cell.appendChild(cellNumber);
-        
-        // Check if cell has a snake or ladder
-        if (snakes[i]) {
-            cell.classList.add('snake');
-        } else if (ladders[i]) {
-            cell.classList.add('ladder');
+        for (let col = 0; col < 10; col++) {
+            const cellNumber = isReverse ? (row * 10 + col + 1) : (row * 10 + (9 - col) + 1);
+            
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            cell.id = `cell-${cellNumber}`;
+            cell.dataset.number = cellNumber;
+            
+            // Add cell number
+            const cellNumberElement = document.createElement('div');
+            cellNumberElement.className = 'cell-number';
+            cellNumberElement.textContent = cellNumber;
+            cell.appendChild(cellNumberElement);
+            
+            // Check if cell has a snake or ladder
+            if (snakes[cellNumber]) {
+                cell.classList.add('snake');
+                const snakeInfo = document.createElement('div');
+                snakeInfo.className = 'cell-special';
+                snakeInfo.textContent = `🐍→${snakes[cellNumber]}`;
+                snakeInfo.style.fontSize = '0.6rem';
+                cell.appendChild(snakeInfo);
+            } else if (ladders[cellNumber]) {
+                cell.classList.add('ladder');
+                const ladderInfo = document.createElement('div');
+                ladderInfo.className = 'cell-special';
+                ladderInfo.textContent = `🪜→${ladders[cellNumber]}`;
+                ladderInfo.style.fontSize = '0.6rem';
+                cell.appendChild(ladderInfo);
+            }
+            
+            // Add player markers container
+            const markersContainer = document.createElement('div');
+            markersContainer.className = 'markers-container';
+            cell.appendChild(markersContainer);
+            
+            gameBoard.appendChild(cell);
         }
-        
-        // Add player markers container
-        const markersContainer = document.createElement('div');
-        markersContainer.className = 'markers-container';
-        cell.appendChild(markersContainer);
-        
-        gameBoard.appendChild(cell);
     }
     
     updatePlayerPositions();
@@ -424,6 +633,13 @@ function setupEventListeners() {
             startLocalGame();
         }
     });
+    
+    // Enter key for room ID input
+    roomIdInput.addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') {
+            joinRoom();
+        }
+    });
 }
 
 // Handle game mode change
@@ -443,12 +659,14 @@ function handleGameModeChange() {
         document.getElementById('piece2').id = 'pieceAI';
         playerPieces[1] = document.getElementById('pieceAI');
         onlinePlayerElement.classList.add('hidden');
+        document.getElementById('player2').classList.remove('hidden');
     } else {
         aiPlayerElement.style.display = 'none';
         player2Display.textContent = playerNames[1];
         document.getElementById('pieceAI').id = 'piece2';
         playerPieces[1] = document.getElementById('piece2');
         onlinePlayerElement.classList.add('hidden');
+        document.getElementById('player2').classList.remove('hidden');
     }
     
     isOnlineGame = false;
@@ -466,7 +684,8 @@ function startLocalGame() {
     playerNames[0] = name;
     
     if (gameMode === 'twoPlayers') {
-        playerNames[1] = playerNames[1] || 'Player 2';
+        const player2Name = prompt("Enter Player 2 name:", playerNames[1]) || 'Player 2';
+        playerNames[1] = player2Name;
     }
     
     localStorage.setItem('snakesLaddersPlayer1', playerNames[0]);
@@ -624,7 +843,9 @@ function movePlayer(steps, isOpponent = false) {
                     type: 'playerMove',
                     position: newPosition,
                     gameOver: true,
-                    winner: playerNames[0]
+                    winner: playerNames[0],
+                    landedOnSnake: false,
+                    climbedLadder: false
                 });
             }
             declareWinnerOnline(isOpponent ? playerNames[1] : playerNames[0]);
@@ -650,11 +871,13 @@ function movePlayer(steps, isOpponent = false) {
             sendData({
                 type: 'playerMove',
                 position: newPosition,
-                gameOver: false
+                gameOver: false,
+                landedOnSnake: landedOnSnake,
+                climbedLadder: climbedLadder
             });
             
             isMyTurn = false;
-            onlineStatus.textContent = "Opponent's turn...";
+            onlineStatus.textContent = "Opponent's turn... Waiting...";
             rollDiceBtn.disabled = true;
             currentPlayer = 1;
         } else if (!gameOver && !isOnlineGame) {
@@ -683,17 +906,20 @@ function updatePlayerPositions() {
         const position = playerPositions[i];
         if (position > 0) {
             const cell = document.getElementById(`cell-${position}`);
-            const markersContainer = cell.querySelector('.markers-container');
-            
-            const marker = document.createElement('div');
-            if (isOnlineGame) {
-                marker.className = i === 0 ? 'player-marker player1-marker' : 'player-marker online-marker';
-            } else if (gameMode === 'vsAI' && i === 1) {
-                marker.className = 'player-marker ai-marker';
-            } else {
-                marker.className = `player-marker player${i+1}-marker`;
+            if (cell) {
+                const markersContainer = cell.querySelector('.markers-container');
+                if (markersContainer) {
+                    const marker = document.createElement('div');
+                    if (isOnlineGame) {
+                        marker.className = i === 0 ? 'player-marker player1-marker' : 'player-marker online-marker';
+                    } else if (gameMode === 'vsAI' && i === 1) {
+                        marker.className = 'player-marker ai-marker';
+                    } else {
+                        marker.className = `player-marker player${i+1}-marker`;
+                    }
+                    markersContainer.appendChild(marker);
+                }
             }
-            markersContainer.appendChild(marker);
         }
     }
 }
@@ -703,12 +929,14 @@ function updatePlayerDisplay() {
     currentPlayerDisplay.textContent = `Current: ${getPlayerName(currentPlayer)}`;
     
     playerPieces.forEach((piece, index) => {
-        if (index === currentPlayer) {
-            piece.style.transform = 'scale(1.2)';
-            piece.style.boxShadow = '0 0 5px rgba(0,0,0,0.5)';
-        } else {
-            piece.style.transform = 'scale(1)';
-            piece.style.boxShadow = 'none';
+        if (piece) {
+            if (index === currentPlayer) {
+                piece.style.transform = 'scale(1.2)';
+                piece.style.boxShadow = '0 0 5px rgba(0,0,0,0.5)';
+            } else {
+                piece.style.transform = 'scale(1)';
+                piece.style.boxShadow = 'none';
+            }
         }
     });
 }
@@ -729,7 +957,9 @@ function updatePlayerDisplayNames() {
 // Declare winner for online game
 function declareWinnerOnline(winnerName) {
     const winnerCell = document.getElementById(`cell-${BOARD_SIZE}`);
-    winnerCell.classList.add('winner');
+    if (winnerCell) {
+        winnerCell.classList.add('winner');
+    }
     
     setTimeout(() => {
         alert(`${winnerName} wins the game!`);
@@ -745,7 +975,9 @@ function declareWinnerOnline(winnerName) {
 // Declare winner for local game
 function declareWinner() {
     const winnerCell = document.getElementById(`cell-${BOARD_SIZE}`);
-    winnerCell.classList.add('winner');
+    if (winnerCell) {
+        winnerCell.classList.add('winner');
+    }
     
     setTimeout(() => {
         alert(`${getPlayerName(currentPlayer)} wins the game!`);
@@ -767,11 +999,15 @@ function showMessage(message) {
     messageDiv.style.borderRadius = '5px';
     messageDiv.style.zIndex = '1000';
     messageDiv.style.fontWeight = 'bold';
+    messageDiv.style.textAlign = 'center';
+    messageDiv.style.maxWidth = '80%';
     
     document.body.appendChild(messageDiv);
     
     setTimeout(() => {
-        document.body.removeChild(messageDiv);
+        if (document.body.contains(messageDiv)) {
+            document.body.removeChild(messageDiv);
+        }
     }, 2000);
 }
 
@@ -795,7 +1031,7 @@ function resetGame() {
     
     if (isOnlineGame) {
         isMyTurn = isOnlineHost;
-        onlineStatus.textContent = isMyTurn ? "Your turn!" : "Opponent's turn...";
+        onlineStatus.textContent = isMyTurn ? "Your turn! Roll the dice." : "Opponent's turn... Waiting...";
         rollDiceBtn.disabled = !isMyTurn;
     } else {
         rollDiceBtn.disabled = false;
@@ -838,3 +1074,13 @@ function checkThemePreference() {
 
 // Initialize the game when the page loads
 window.addEventListener('DOMContentLoaded', initGame);
+
+// Handle page visibility change for better connection management
+document.addEventListener('visibilitychange', function() {
+    if (document.hidden && isOnlineGame) {
+        // Page is hidden, maybe send a ping to keep connection alive
+        if (conn && conn.open) {
+            sendData({ type: 'ping' });
+        }
+    }
+});
