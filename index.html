@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Snakes and Ladders Game</title>
+    <link rel="stylesheet" href="style.css">
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Snakes and Ladders</h1>
+            <button id="themeToggle" class="theme-toggle">🌙 Dark Mode</button>
+        </div>
+        
+        <!-- Online Play Modal -->
+        <div class="online-modal" id="onlineModal">
+            <div class="modal-content">
+                <h2>Online Multiplayer</h2>
+                <div class="online-options">
+                    <div class="connection-status" id="connectionStatus">
+                        Connecting to server...
+                    </div>
+                    
+                    <div class="online-actions">
+                        <button id="createRoom" class="online-btn">Create Room</button>
+                        <div class="or-divider">OR</div>
+                        <div class="join-room">
+                            <input type="text" id="roomId" placeholder="Enter Room ID" maxlength="10">
+                            <button id="joinRoom" class="online-btn">Join Room</button>
+                        </div>
+                    </div>
+                    
+                    <div class="room-info hidden" id="roomInfo">
+                        <h3>Room Information</h3>
+                        <p>Room ID: <span id="currentRoomId">-</span></p>
+                        <p>Players: <span id="playerCount">1/2</span></p>
+                        <div id="playersList"></div>
+                        <button id="startOnlineGame" class="online-btn hidden">Start Game</button>
+                        <button id="copyRoomId" class="online-btn secondary">Copy Room ID</button>
+                    </div>
+                </div>
+                <button id="backToMain" class="back-btn">Back to Main Menu</button>
+            </div>
+        </div>
+
+        <!-- Player Names Modal -->
+        <div class="player-names-modal hidden" id="playerNamesModal">
+            <div class="modal-content">
+                <h2>Enter Player Name</h2>
+                <div class="name-inputs">
+                    <div class="input-group">
+                        <label for="playerName">Your Name:</label>
+                        <input type="text" id="playerName" placeholder="Enter your name" maxlength="15">
+                    </div>
+                </div>
+                <button id="startGame" class="start-btn">Start Game</button>
+            </div>
+        </div>
+        
+        <div class="game-settings">
+            <div class="game-mode">
+                <label>Game Mode:</label>
+                <select id="gameMode">
+                    <option value="twoPlayers">Two Players (Local)</option>
+                    <option value="vsAI">Play vs AI</option>
+                    <option value="online">Online Multiplayer</option>
+                </select>
+            </div>
+            <div class="ai-difficulty">
+                <label>AI Difficulty:</label>
+                <select id="aiDifficulty">
+                    <option value="easy">Easy</option>
+                    <option value="medium">Medium</option>
+                    <option value="hard">Hard</option>
+                </select>
+            </div>
+            <button id="changeNames" class="change-names-btn">Change Names</button>
+        </div>
+        
+        <div class="game-info">
+            <div class="player-info">
+                <div class="player" id="player1">
+                    <span class="player-name" id="player1Display">Player 1</span>
+                    <div class="player-piece" id="piece1"></div>
+                </div>
+                <div class="player" id="player2">
+                    <span class="player-name" id="player2Display">Player 2</span>
+                    <div class="player-piece" id="piece2"></div>
+                </div>
+                <div class="player hidden" id="onlinePlayer">
+                    <span class="player-name" id="onlinePlayerDisplay">Opponent</span>
+                    <div class="player-piece" id="pieceOnline"></div>
+                    <div class="connection-indicator" id="connectionIndicator"></div>
+                </div>
+                <div class="player hidden" id="aiPlayer">
+                    <span class="player-name">AI</span>
+                    <div class="player-piece" id="pieceAI"></div>
+                </div>
+            </div>
+            
+            <div class="controls">
+                <button id="rollDice" class="hidden">Roll Dice</button>
+                <div id="diceResult">Dice: -</div>
+                <div id="currentPlayer">Current: Player 1</div>
+                <div id="onlineStatus" class="online-status hidden"></div>
+            </div>
+        </div>
+        
+        <div class="game-board" id="gameBoard">
+            <!-- Board will be generated by JavaScript -->
+        </div>
+        
+        <div class="game-rules">
+            <h3>Game Rules:</h3>
+            <ul>
+                <li>Players take turns rolling the dice</li>
+                <li>Move forward the number of spaces shown on the dice</li>
+                <li>If you land on a ladder, climb up to the higher space</li>
+                <li>If you land on a snake, slide down to the lower space</li>
+                <li>First player to reach space 100 wins!</li>
+                <li class="online-rule">In online mode, players take turns automatically</li>
+            </ul>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+</body>
+</html>
