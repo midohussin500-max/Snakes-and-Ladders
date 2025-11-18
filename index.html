@@ -3,128 +3,159 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Snakes and Ladders Game</title>
+    <title>Snakes and Ladders</title>
     <link rel="stylesheet" href="style.css">
-    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
+    <!-- Player Setup Screen -->
+    <div id="setupScreen" class="screen active">
+        <div class="setup-container">
             <h1>Snakes and Ladders</h1>
-            <button id="themeToggle" class="theme-toggle">🌙 Dark Mode</button>
-        </div>
-        
-        <!-- Online Play Modal -->
-        <div class="online-modal" id="onlineModal">
-            <div class="modal-content">
-                <h2>Online Multiplayer</h2>
-                <div class="online-options">
-                    <div class="connection-status" id="connectionStatus">
-                        Connecting to server...
-                    </div>
-                    
-                    <div class="online-actions">
-                        <button id="createRoom" class="online-btn">Create Room</button>
-                        <div class="or-divider">OR</div>
-                        <div class="join-room">
-                            <input type="text" id="roomId" placeholder="Enter Room ID" maxlength="10">
-                            <button id="joinRoom" class="online-btn">Join Room</button>
+            <div class="setup-form">
+                <h2>Player Setup</h2>
+                <div class="players-setup">
+                    <div class="player-setup-group">
+                        <div class="input-group">
+                            <label for="player1Name">Player 1 Name:</label>
+                            <input type="text" id="player1Name" placeholder="Enter Player 1 name" maxlength="15" value="Player 1">
                         </div>
+                        <div class="player-color" style="background-color: #3498db;"></div>
                     </div>
-                    
-                    <div class="room-info hidden" id="roomInfo">
-                        <h3>Room Information</h3>
-                        <p>Room ID: <span id="currentRoomId">-</span></p>
-                        <p>Players: <span id="playerCount">1/2</span></p>
-                        <div id="playersList"></div>
-                        <button id="startOnlineGame" class="online-btn hidden">Start Game</button>
-                        <button id="copyRoomId" class="online-btn secondary">Copy Room ID</button>
+                    <div class="player-setup-group">
+                        <div class="input-group">
+                            <label for="player2Name">Player 2 Name:</label>
+                            <input type="text" id="player2Name" placeholder="Enter Player 2 name" maxlength="15" value="Player 2">
+                        </div>
+                        <div class="player-color" style="background-color: #e74c3c;"></div>
                     </div>
                 </div>
-                <button id="backToMain" class="back-btn">Back to Main Menu</button>
-            </div>
-        </div>
-
-        <!-- Player Names Modal -->
-        <div class="player-names-modal hidden" id="playerNamesModal">
-            <div class="modal-content">
-                <h2>Enter Player Name</h2>
-                <div class="name-inputs">
+                <div class="game-mode">
+                    <h3>Game Mode</h3>
+                    <div class="mode-options">
+                        <label class="mode-option">
+                            <input type="radio" name="gameMode" value="friend" checked>
+                            <span>VS Friend</span>
+                        </label>
+                        <label class="mode-option">
+                            <input type="radio" name="gameMode" value="ai">
+                            <span>VS AI</span>
+                        </label>
+                        <label class="mode-option">
+                            <input type="radio" name="gameMode" value="online">
+                            <span>Online Multiplayer</span>
+                        </label>
+                    </div>
+                </div>
+                <div id="onlineOptions" class="online-options hidden">
                     <div class="input-group">
-                        <label for="playerName">Your Name:</label>
-                        <input type="text" id="playerName" placeholder="Enter your name" maxlength="15">
+                        <label for="roomCode">Room Code:</label>
+                        <input type="text" id="roomCode" placeholder="Enter room code">
+                    </div>
+                    <div class="online-buttons">
+                        <button id="createRoomBtn" class="online-btn">Create Room</button>
+                        <button id="joinRoomBtn" class="online-btn">Join Room</button>
                     </div>
                 </div>
-                <button id="startGame" class="start-btn">Start Game</button>
+                <button id="startGameBtn" class="start-btn">Start Game</button>
             </div>
-        </div>
-        
-        <div class="game-settings">
-            <div class="game-mode">
-                <label>Game Mode:</label>
-                <select id="gameMode">
-                    <option value="twoPlayers">Two Players (Local)</option>
-                    <option value="vsAI">Play vs AI</option>
-                    <option value="online">Online Multiplayer</option>
-                </select>
-            </div>
-            <div class="ai-difficulty">
-                <label>AI Difficulty:</label>
-                <select id="aiDifficulty">
-                    <option value="easy">Easy</option>
-                    <option value="medium">Medium</option>
-                    <option value="hard">Hard</option>
-                </select>
-            </div>
-            <button id="changeNames" class="change-names-btn">Change Names</button>
-        </div>
-        
-        <div class="game-info">
-            <div class="player-info">
-                <div class="player" id="player1">
-                    <span class="player-name" id="player1Display">Player 1</span>
-                    <div class="player-piece" id="piece1"></div>
-                </div>
-                <div class="player" id="player2">
-                    <span class="player-name" id="player2Display">Player 2</span>
-                    <div class="player-piece" id="piece2"></div>
-                </div>
-                <div class="player hidden" id="onlinePlayer">
-                    <span class="player-name" id="onlinePlayerDisplay">Opponent</span>
-                    <div class="player-piece" id="pieceOnline"></div>
-                    <div class="connection-indicator" id="connectionIndicator"></div>
-                </div>
-                <div class="player hidden" id="aiPlayer">
-                    <span class="player-name">AI</span>
-                    <div class="player-piece" id="pieceAI"></div>
-                </div>
-            </div>
-            
-            <div class="controls">
-                <button id="rollDice" class="hidden">Roll Dice</button>
-                <div id="diceResult">Dice: -</div>
-                <div id="currentPlayer">Current: Player 1</div>
-                <div id="onlineStatus" class="online-status hidden"></div>
-            </div>
-        </div>
-        
-        <div class="game-board" id="gameBoard">
-            <!-- Board will be generated by JavaScript -->
-        </div>
-        
-        <div class="game-rules">
-            <h3>Game Rules:</h3>
-            <ul>
-                <li>Players take turns rolling the dice</li>
-                <li>Move forward the number of spaces shown on the dice</li>
-                <li>If you land on a ladder, climb up to the higher space</li>
-                <li>If you land on a snake, slide down to the lower space</li>
-                <li>First player to reach space 100 wins!</li>
-                <li class="online-rule">In online mode, players take turns automatically</li>
-            </ul>
         </div>
     </div>
-    
+
+    <!-- Online Waiting Screen -->
+    <div id="waitingScreen" class="screen">
+        <div class="waiting-container">
+            <h1>Waiting for Players</h1>
+            <div class="waiting-info">
+                <p>Room Code: <span id="roomCodeDisplay">XXXX</span></p>
+                <p>Share this code with your friend!</p>
+                <div class="players-waiting">
+                    <div class="player-waiting">
+                        <div class="player-avatar" style="background-color: #3498db;"></div>
+                        <span id="waitingPlayer1">You</span>
+                    </div>
+                    <div class="player-waiting">
+                        <div class="player-avatar" style="background-color: #e74c3c;"></div>
+                        <span id="waitingPlayer2">Waiting for player...</span>
+                    </div>
+                </div>
+            </div>
+            <button id="cancelWaitingBtn" class="cancel-btn">Cancel</button>
+        </div>
+    </div>
+
+    <!-- Main Game Screen -->
+    <div id="gameScreen" class="screen">
+        <div class="container">
+            <header>
+                <h1>Snakes and Ladders</h1>
+                <div class="game-info-header">
+                    <div id="onlineStatus" class="online-status hidden">
+                        <span class="status-dot"></span>
+                        <span>Online</span>
+                        <span id="roomInfo">Room: XXXX</span>
+                    </div>
+                    <div class="controls">
+                        <button id="themeToggle">🌙 Dark Mode</button>
+                        <button id="setupBtn">⚙️ Setup</button>
+                        <button id="restartBtn">🔄 Restart</button>
+                    </div>
+                </div>
+            </header>
+
+            <div class="game-info">
+                <div class="player-info">
+                    <div class="player active" id="player1">
+                        <span class="player-name" id="player1Display">Player 1</span>
+                        <div class="player-piece" style="background-color: #3498db;">P1</div>
+                    </div>
+                    <div class="player" id="player2">
+                        <span class="player-name" id="player2Display">Player 2</span>
+                        <div class="player-piece" style="background-color: #e74c3c;">P2</div>
+                    </div>
+                </div>
+                <div class="dice-container">
+                    <div class="dice" id="dice">
+                        <div class="dice-face" data-value="1">
+                            <span class="dot center-dot"></span>
+                        </div>
+                    </div>
+                    <button id="rollBtn">Roll Dice</button>
+                </div>
+                <div class="status" id="status">Player 1's turn</div>
+            </div>
+
+            <div class="game-board">
+                <div class="board" id="board">
+                    <!-- Board will be generated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="game-rules">
+                <h3>Game Rules</h3>
+                <ul>
+                    <li>Players take turns rolling the dice and moving their pieces</li>
+                    <li>If you land on a ladder 🪜, climb up to the higher number</li>
+                    <li>If you land on a snake 🐍, slide down to the lower number</li>
+                    <li>First player to reach exactly square 100 wins!</li>
+                    <li>You must roll the exact number to reach square 100</li>
+                </ul>
+            </div>
+
+            <div class="game-stats">
+                <div class="stats">
+                    <h3>Game Statistics</h3>
+                    <p><span id="player1WinsName">Player 1</span> Wins: <span id="player1Wins">0</span></p>
+                    <p><span id="player2WinsName">Player 2</span> Wins: <span id="player2Wins">0</span></p>
+                    <p>Total Games: <span id="totalGames">0</span></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game Sounds -->
+    <audio id="diceSound" src="dice sound.mp3"></audio>
+    <audio id="winSound" src="win sound.mp3"></audio>
+
     <script src="script.js"></script>
 </body>
 </html>
